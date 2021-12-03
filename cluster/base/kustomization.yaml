@@ -1,0 +1,4 @@
+resources:
+  - ../../namespaces/base
+  - ../../argo-workflows/base
+  - ../../argo-events/base

@@ -1,0 +1,6 @@
+resources:
+  - install.yaml
+  - install-validating-webhook.yaml
+  - native.yaml
+
+namespace: argo-events

@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: aws-sqs
+spec:
+  template:
+    serviceAccountName: argo-events-sa
+  dependencies:
+    - name: aws-sqs
+      eventSourceName: aws-sqs
+      eventName: bucket-file
+  triggers:
+    - template:
+        name: bucket-file
+        k8s:
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: replace-me  # Name of this Workflow
+              spec:
+                entrypoint: main        # Defines "whalesay" as the "main" template
+                arguments:
+                  parameters:
+                    - name: message
+                      # this is the value that should be overridden
+                      value: replace-me
+                imagePullSecrets:
+                  - name: ecr-creds
+                templates:
+                  - name: main
+                    inputs:
+                      parameters:
+                        - name: message
+                    steps:
+                      - - name: entry
+                          template: entry
+                          arguments:
+                            parameters:
+                              - name: source_path
+                                value: "{{inputs.parameters.message}}"
+                  - name: entry
+                    inputs:
+                      parameters:
+                        - name: source_path
+                    container:
+                      image: replace-me/replace-me:latest
+                      imagePullPolicy: Always
+                      envFrom:
+                        - secretRef:
+                            name: workflow-env
+                      command:
+                        - 'python'
+                        - 'entry.py'
+                      args:
+                        - '--source_path=s3://replace-me/{{inputs.parameters.source_path}}'
+                    sidecars:
+                      - name: tika
+                        image: replace-me/tika:latest
+                        securityContext:
+                          privileged: true                       
+          parameters:
+            - src:
+                dependencyName: aws-sqs
+                dataKey: body.Records.0.s3.object.key
+              dest: spec.arguments.parameters.0.value
