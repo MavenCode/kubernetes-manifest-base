@@ -1,0 +1,143 @@
+---
+# Source: airflow/templates/flower/flower-deployment.yaml
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+################################
+## Airflow Flower Deployment
+#################################
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: airflow-flower
+  labels:
+    tier: airflow
+    component: flower
+    release: airflow
+    chart: "airflow-1.2.0"
+    heritage: Helm
+  annotations:
+    checksum/airflow-config: aea4f92ef86c687e5d97ba4bdb0b444a5ba44300ce2d568b1c1b554e87d799c8
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      tier: airflow
+      component: flower
+      release: airflow
+  template:
+    metadata:
+      labels:
+        tier: airflow
+        component: flower
+        release: airflow
+    spec:
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      serviceAccountName: airflow-flower
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 50000
+      containers:
+        - name: flower
+          image: apache/airflow:2.1.4
+          imagePullPolicy: IfNotPresent
+          args: 
+            - bash
+            - -c
+            - |-
+              exec \
+              airflow celery flower
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+          ports:
+            - name: flower-ui
+              containerPort: 5555
+          livenessProbe:
+            failureThreshold: 10
+            exec:
+              command:
+                - curl
+                - localhost:5555
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 10
+            exec:
+              command:
+                - curl
+                - localhost:5555
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          env:          
+            # Hard Coded Airflow Envs
+            - name: AIRFLOW__CORE__FERNET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-fernet-key
+                  key: fernet-key
+            - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-airflow-metadata
+                  key: connection
+            - name: AIRFLOW_CONN_AIRFLOW_DB
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-airflow-metadata
+                  key: connection
+            - name: AIRFLOW__WEBSERVER__SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-webserver-secret-key
+                  key: webserver-secret-key
+            - name: AIRFLOW__CELERY__CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-airflow-result-backend
+                  key: connection
+            - name: AIRFLOW__CELERY__RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-airflow-result-backend
+                  key: connection
+            - name: AIRFLOW__CELERY__BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-broker-url
+                  key: connection          
+            # Dynamically created environment variables
+            # Dynamically created secret envs
+            - name: AIRFLOW_CONN_AWS
+              valueFrom:
+                secretKeyRef:
+                  name: my-airflow-connections
+                  key: AIRFLOW_CONN_AWS
+            # Extra env
+      volumes:
+        - name: config
+          configMap:
+            name: airflow-airflow-config
