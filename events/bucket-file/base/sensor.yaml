@@ -19,13 +19,20 @@ spec:
               apiVersion: argoproj.io/v1alpha1
               kind: Workflow
               metadata:
-                generateName: replace-me  # Name of this Workflow
+                generateName: replace-me-
               spec:
-                entrypoint: main        # Defines "whalesay" as the "main" template
+                podGC:
+                  strategy: OnWorkflowSuccess
+                serviceAccountName: argo-events-sa
+                entrypoint: main
+                synchronization:
+                  semaphore:
+                    configMapKeyRef:
+                      name: bucket-file-sync
+                      key: workflow
                 arguments:
                   parameters:
                     - name: message
-                      # this is the value that should be overridden
                       value: replace-me
                 imagePullSecrets:
                   - name: ecr-creds
@@ -35,32 +42,81 @@ spec:
                       parameters:
                         - name: message
                     steps:
-                      - - name: entry
-                          template: entry
+                      - - name: classification
+                          template: classification
                           arguments:
                             parameters:
                               - name: source_path
                                 value: "{{inputs.parameters.message}}"
-                  - name: entry
+                      - - name: clean-raw-output
+                          template: clean-raw-output
+                          arguments:
+                            parameters:
+                              - name: raw_output
+                                value: "{{steps.classification.outputs.result}}"
+                      - - name: evaluation-1
+                          template: evaluation
+                          when: "{{steps.clean-raw-output.outputs.result}} == 1"
+                          arguments:
+                            parameters:
+                              - name: source_path
+                                value: "{{inputs.parameters.message}}"
+                              - name: image
+                                value: replace-me
+                  - name: clean-raw-output
+                    inputs:
+                      parameters:
+                        - name: raw_output
+                    script:
+                      image: python:alpine3.6
+                      command: [python]
+                      source: |
+                        raw_output = """
+                        {{inputs.parameters.raw_output}}
+                        """
+                        print(raw_output.strip().split('\n')[-1])
+                  - name: classification
                     inputs:
                       parameters:
                         - name: source_path
                     container:
-                      image: replace-me/replace-me:latest
+                      image: $ECR_REGISTRY/replace-me:latest
                       imagePullPolicy: Always
                       envFrom:
-                        - secretRef:
+                        - configMapRef:
                             name: workflow-env
                       command:
                         - 'python'
-                        - 'entry.py'
+                        - 'classification.py'
                       args:
-                        - '--source_path=s3://replace-me/{{inputs.parameters.source_path}}'
+                        - '--source_path=s3://$BUCKET_NAME/{{inputs.parameters.source_path}}'
+                      resources:
+                        limits:
+                          memory: 1024Mi
+                          cpu: 200m
                     sidecars:
                       - name: tika
-                        image: replace-me/tika:latest
-                        securityContext:
-                          privileged: true                       
+                        image: docker.io/apache/tika:1.27
+                  - name: evaluation
+                    inputs:
+                      parameters:
+                        - name: source_path
+                        - name: image
+                    container:
+                      image: "{{inputs.parameters.image}}"
+                      imagePullPolicy: Always
+                      envFrom:
+                        - configMapRef:
+                            name: workflow-env
+                      args:
+                        - '--source_path=s3://$BUCKET_NAME/{{inputs.parameters.source_path}}'
+                      resources:
+                        limits:
+                          memory: 1024Mi
+                          cpu: 200m
+                    sidecars:
+                      - name: tika
+                        image: docker.io/apache/tika:1.27
           parameters:
             - src:
                 dependencyName: aws-sqs
