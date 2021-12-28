@@ -1,4 +1,5 @@
 resources:
   - event-source.yaml
   - sensor.yaml
+  - config-map.yaml
 namespace: argo-events

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bucket-file-sync
+data:
+  workflow: "4"  # Only this many workflows can run at given time in particular namespace
+  template: "4"  # Only this many instances of a workflow template can run at a given time in particular namespace
